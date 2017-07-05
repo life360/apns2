@@ -4,8 +4,10 @@ import (
 	"crypto/tls"
 	"fmt"
 	"io/ioutil"
+	"net"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
@@ -67,15 +69,35 @@ func TestClientBadTransportError(t *testing.T) {
 }
 
 func TestClientNameToCertificate(t *testing.T) {
+	crt, _ := certificate.FromP12File("certificate/_fixtures/certificate-valid.p12", "")
+	client := apns.NewClient(crt)
+	name := client.HTTPClient.Transport.(*http2.Transport).TLSClientConfig.NameToCertificate
+	assert.Len(t, name, 1)
+
 	certificate2 := tls.Certificate{}
 	client2 := apns.NewClient(certificate2)
 	name2 := client2.HTTPClient.Transport.(*http2.Transport).TLSClientConfig.NameToCertificate
 	assert.Len(t, name2, 0)
+}
 
-	certificate, _ := certificate.FromP12File("certificate/_fixtures/certificate-valid.p12", "")
-	client := apns.NewClient(certificate)
-	name := client.HTTPClient.Transport.(*http2.Transport).TLSClientConfig.NameToCertificate
-	assert.Len(t, name, 1)
+func TestDialTLSTimeout(t *testing.T) {
+	apns.TLSDialTimeout = 1 * time.Millisecond
+	crt, _ := certificate.FromP12File("certificate/_fixtures/certificate-valid.p12", "")
+	client := apns.NewClient(crt)
+	dialTLS := client.HTTPClient.Transport.(*http2.Transport).DialTLS
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	address := listener.Addr().String()
+	defer listener.Close()
+	var e error
+	if _, e = dialTLS("tcp", address, nil); e == nil {
+		t.Fatal("Dial completed successfully")
+	}
+	if !strings.Contains(e.Error(), "timed out") {
+		t.Errorf("resulting error not a timeout: %s", e)
+	}
 }
 
 // Functional Tests
@@ -96,9 +118,11 @@ func TestDefaultHeaders(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		assert.Equal(t, "application/json; charset=utf-8", r.Header.Get("Content-Type"))
 		assert.Equal(t, "", r.Header.Get("apns-id"))
+		assert.Equal(t, "", r.Header.Get("apns-collapse-id"))
 		assert.Equal(t, "", r.Header.Get("apns-priority"))
 		assert.Equal(t, "", r.Header.Get("apns-topic"))
 		assert.Equal(t, "", r.Header.Get("apns-expiration"))
+		assert.Equal(t, "", r.Header.Get("thread-id"))
 	}))
 	defer server.Close()
 	_, err := mockClient(server.URL).Push(n)
@@ -108,11 +132,13 @@ func TestDefaultHeaders(t *testing.T) {
 func TestHeaders(t *testing.T) {
 	n := mockNotification()
 	n.ApnsID = "84DB694F-464F-49BD-960A-D6DB028335C9"
+	n.CollapseID = "game1.start.identifier"
 	n.Topic = "com.testapp"
 	n.Priority = 10
 	n.Expiration = time.Now()
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		assert.Equal(t, n.ApnsID, r.Header.Get("apns-id"))
+		assert.Equal(t, n.CollapseID, r.Header.Get("apns-collapse-id"))
 		assert.Equal(t, "10", r.Header.Get("apns-priority"))
 		assert.Equal(t, n.Topic, r.Header.Get("apns-topic"))
 		assert.Equal(t, fmt.Sprintf("%v", n.Expiration.Unix()), r.Header.Get("apns-expiration"))
@@ -182,7 +208,7 @@ func Test410UnregisteredResponse(t *testing.T) {
 		w.Header().Set("Content-Type", "application/json; charset=utf-8")
 		w.Header().Set("apns-id", apnsID)
 		w.WriteHeader(http.StatusGone)
-		w.Write([]byte("{\"reason\":\"Unregistered\", \"timestamp\":\"1421147681\"}"))
+		w.Write([]byte("{\"reason\":\"Unregistered\", \"timestamp\": 1458114061260 }"))
 	}))
 	defer server.Close()
 	res, err := mockClient(server.URL).Push(n)
@@ -190,7 +216,7 @@ func Test410UnregisteredResponse(t *testing.T) {
 	assert.Equal(t, 410, res.StatusCode)
 	assert.Equal(t, apnsID, res.ApnsID)
 	assert.Equal(t, apns.ReasonUnregistered, res.Reason)
-	assert.Equal(t, int64(1421147681), res.Timestamp.Unix())
+	assert.Equal(t, int64(1458114061260)/1000, res.Timestamp.Unix())
 	assert.Equal(t, false, res.Sent())
 }
 

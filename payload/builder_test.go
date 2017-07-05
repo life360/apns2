@@ -50,6 +50,12 @@ func TestContentAvailable(t *testing.T) {
 	assert.Equal(t, `{"aps":{"content-available":1}}`, string(b))
 }
 
+func TestMutableContent(t *testing.T) {
+	payload := NewPayload().MutableContent()
+	b, _ := json.Marshal(payload)
+	assert.Equal(t, `{"aps":{"mutable-content":1}}`, string(b))
+}
+
 func TestCustom(t *testing.T) {
 	payload := NewPayload().Custom("key", "val")
 	b, _ := json.Marshal(payload)
@@ -76,10 +82,22 @@ func TestAlertTitleLocKey(t *testing.T) {
 	assert.Equal(t, `{"aps":{"alert":{"title-loc-key":"GAME_PLAY_REQUEST_FORMAT"}}}`, string(b))
 }
 
+func TestAlertLocArgs(t *testing.T) {
+	payload := NewPayload().AlertLocArgs([]string{"Jenna", "Frank"})
+	b, _ := json.Marshal(payload)
+	assert.Equal(t, `{"aps":{"alert":{"loc-args":["Jenna","Frank"]}}}`, string(b))
+}
+
 func TestAlertTitleLocArgs(t *testing.T) {
 	payload := NewPayload().AlertTitleLocArgs([]string{"Jenna", "Frank"})
 	b, _ := json.Marshal(payload)
 	assert.Equal(t, `{"aps":{"alert":{"title-loc-args":["Jenna","Frank"]}}}`, string(b))
+}
+
+func TestAlertSubtitle(t *testing.T) {
+	payload := NewPayload().AlertSubtitle("hello")
+	b, _ := json.Marshal(payload)
+	assert.Equal(t, `{"aps":{"alert":{"subtitle":"hello"}}}`, string(b))
 }
 
 func TestAlertBody(t *testing.T) {
@@ -122,6 +140,12 @@ func TestMdm(t *testing.T) {
 	payload := NewPayload().Mdm("996ac527-9993-4a0a-8528-60b2b3c2f52b")
 	b, _ := json.Marshal(payload)
 	assert.Equal(t, `{"aps":{},"mdm":"996ac527-9993-4a0a-8528-60b2b3c2f52b"}`, string(b))
+}
+
+func TestThreadID(t *testing.T) {
+	payload := NewPayload().ThreadID("THREAD_ID")
+	b, _ := json.Marshal(payload)
+	assert.Equal(t, `{"aps":{"thread-id":"THREAD_ID"}}`, string(b))
 }
 
 func TestURLArgs(t *testing.T) {

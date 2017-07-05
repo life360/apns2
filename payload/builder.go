@@ -15,8 +15,10 @@ type aps struct {
 	Badge            interface{} `json:"badge,omitempty"`
 	Category         string      `json:"category,omitempty"`
 	ContentAvailable int         `json:"content-available,omitempty"`
-	URLArgs          []string    `json:"url-args,omitempty"`
+	MutableContent   int         `json:"mutable-content,omitempty"`
 	Sound            string      `json:"sound,omitempty"`
+	ThreadID         string      `json:"thread-id,omitempty"`
+	URLArgs          []string    `json:"url-args,omitempty"`
 }
 
 type alert struct {
@@ -27,6 +29,7 @@ type alert struct {
 	LocArgs      []string `json:"loc-args,omitempty"`
 	LocKey       string   `json:"loc-key,omitempty"`
 	Title        string   `json:"title,omitempty"`
+	Subtitle     string   `json:"subtitle,omitempty"`
 	TitleLocArgs []string `json:"title-loc-args,omitempty"`
 	TitleLocKey  string   `json:"title-loc-key,omitempty"`
 }
@@ -96,6 +99,16 @@ func (p *Payload) ContentAvailable() *Payload {
 	return p
 }
 
+// MutableContent sets the aps mutable-content on the payload to 1.
+// This will indicate to the to the system to call your Notification Service
+// extension to mutate or replace the notification's content.
+//
+//	{"aps":{"mutable-content":1}}
+func (p *Payload) MutableContent() *Payload {
+	p.aps().MutableContent = 1
+	return p
+}
+
 // Custom payload
 
 // Custom sets a custom key and value on the payload.
@@ -113,7 +126,7 @@ func (p *Payload) Custom(key string, val interface{}) *Payload {
 // This will display a short string describing the purpose of the notification.
 // Apple Watch & Safari display this string as part of the notification interface.
 //
-//	{"aps":{"alert":"title"}}
+//	{"aps":{"alert":{"title":title}}}
 func (p *Payload) AlertTitle(title string) *Payload {
 	p.aps().alert().Title = title
 	return p
@@ -141,6 +154,16 @@ func (p *Payload) AlertTitleLocArgs(args []string) *Payload {
 	return p
 }
 
+// AlertSubtitle sets the aps alert subtitle on the payload.
+// This will display a short string describing the purpose of the notification.
+// Apple Watch & Safari display this string as part of the notification interface.
+//
+//	{"aps":{"subtitle":"subtitle"}}
+func (p *Payload) AlertSubtitle(subtitle string) *Payload {
+	p.aps().alert().Subtitle = subtitle
+	return p
+}
+
 // AlertBody sets the aps alert body on the payload.
 // This is the text of the alert message.
 //
@@ -158,6 +181,17 @@ func (p *Payload) AlertBody(body string) *Payload {
 //	{"aps":{"alert":{"launch-image":image}}}
 func (p *Payload) AlertLaunchImage(image string) *Payload {
 	p.aps().alert().LaunchImage = image
+	return p
+}
+
+// AlertLocArgs sets the aps alert localization args on the payload.
+// These are the variable string values to appear in place of the format
+// specifiers in loc-key. See Localized Formatted Strings in Apple
+// documentation for more information.
+//
+//  {"aps":{"alert":{"loc-args":args}}}
+func (p *Payload) AlertLocArgs(args []string) *Payload {
+	p.aps().alert().LocArgs = args
 	return p
 }
 
@@ -213,6 +247,19 @@ func (p *Payload) Category(category string) *Payload {
 //	{"aps":{}:"mdm":mdm}
 func (p *Payload) Mdm(mdm string) *Payload {
 	p.content["mdm"] = mdm
+	return p
+}
+
+// ThreadID sets the aps thread id on the payload.
+// This is for the purpose of updating the contents of a View Controller in a
+// Notification Content app extension when a new notification arrives. If a
+// new notification arrives whose thread-id value matches the thread-id of the
+// notification already being displayed, the didReceiveNotification method
+// is called.
+//
+//	{"aps":{"thread-id":id}}
+func (p *Payload) ThreadID(threadID string) *Payload {
+	p.aps().ThreadID = threadID
 	return p
 }
 

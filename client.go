@@ -9,7 +9,9 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
+	"time"
 
 	"golang.org/x/net/http2"
 )
@@ -22,6 +24,16 @@ const (
 
 // DefaultHost is a mutable var for testing purposes
 var DefaultHost = HostDevelopment
+
+var (
+	// TLSDialTimeout is the maximum amount of time a dial will wait for a connect
+	// to complete.
+	TLSDialTimeout = 20 * time.Second
+	// HTTPClientTimeout specifies a time limit for requests made by the
+	// HTTPClient. The timeout includes connection time, any redirects,
+	// and reading the response body.
+	HTTPClientTimeout = 60 * time.Second
+)
 
 // Client represents a connection with the APNs
 type Client struct {
@@ -38,6 +50,9 @@ type Client struct {
 // so that you can keep your connections with APNs open across multiple
 // notifications; don’t repeatedly open and close connections. APNs treats rapid
 // connection and disconnection as a denial-of-service attack.
+//
+// If your use case involves multiple long-lived connections, consider using
+// the ClientManager, which manages clients for you.
 func NewClient(certificate tls.Certificate) *Client {
 	tlsConfig := &tls.Config{
 		Certificates: []tls.Certificate{certificate},
@@ -47,9 +62,15 @@ func NewClient(certificate tls.Certificate) *Client {
 	}
 	transport := &http2.Transport{
 		TLSClientConfig: tlsConfig,
+		DialTLS: func(network, addr string, cfg *tls.Config) (net.Conn, error) {
+			return tls.DialWithDialer(&net.Dialer{Timeout: TLSDialTimeout}, network, addr, cfg)
+		},
 	}
 	return &Client{
-		HTTPClient:  &http.Client{Transport: transport},
+		HTTPClient: &http.Client{
+			Transport: transport,
+			Timeout:   HTTPClientTimeout,
+		},
 		Certificate: certificate,
 		Host:        DefaultHost,
 	}
@@ -72,9 +93,23 @@ func (c *Client) Production() *Client {
 // transparently before sending the notification. It will return a Response
 // indicating whether the notification was accepted or rejected by the APNs
 // gateway, or an error if something goes wrong.
+//
+// Use PushWithContext if you need better cancelation and timeout control.
 func (c *Client) Push(n *Notification) (*Response, error) {
-	payload, err := json.Marshal(n)
+	return c.PushWithContext(nil, n)
+}
 
+// PushWithContext sends a Notification to the APNs gateway. Context carries a
+// deadline and a cancelation signal and allows you to close long running
+// requests when the context timeout is exceeded. Context can be nil, for
+// backwards compatibility.
+//
+// If the underlying http.Client is not currently connected, this method will
+// attempt to reconnect transparently before sending the notification. It will
+// return a Response indicating whether the notification was accepted or
+// rejected by the APNs gateway, or an error if something goes wrong.
+func (c *Client) PushWithContext(ctx Context, n *Notification) (*Response, error) {
+	payload, err := json.Marshal(n)
 	if err != nil {
 		return nil, err
 	}
@@ -82,7 +117,8 @@ func (c *Client) Push(n *Notification) (*Response, error) {
 	url := fmt.Sprintf("%v/3/device/%v", c.Host, n.DeviceToken)
 	req, _ := http.NewRequest("POST", url, bytes.NewBuffer(payload))
 	setHeaders(req, n)
-	httpRes, err := c.HTTPClient.Do(req)
+
+	httpRes, err := c.requestWithContext(ctx, req)
 	if err != nil {
 		return nil, err
 	}
@@ -106,6 +142,9 @@ func setHeaders(r *http.Request, n *Notification) {
 	}
 	if n.ApnsID != "" {
 		r.Header.Set("apns-id", n.ApnsID)
+	}
+	if n.CollapseID != "" {
+		r.Header.Set("apns-collapse-id", n.CollapseID)
 	}
 	if n.Priority > 0 {
 		r.Header.Set("apns-priority", fmt.Sprintf("%v", n.Priority))
